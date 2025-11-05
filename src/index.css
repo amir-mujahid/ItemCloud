@@ -1,0 +1,188 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== brand shades (solid fallback) ===== */
+:root {
+  --b: #035cea;   /* blue */
+  --p: #6525fa;   /* purple */
+}
+
+/* ===== app background ===== */
+html:not(.dark) body {
+  background:
+    radial-gradient(900px 700px at 10% -10%, rgba(59,130,246,.08), transparent 60%),
+    radial-gradient(1000px 800px at 110% 10%, rgba(139,92,246,.08), transparent 60%),
+    linear-gradient(#fff, #fdfdff);
+  background-attachment: fixed;
+}
+html.dark body { background: #0f172a; } /* slate-900 */
+
+/* ===== glass with solid borders (translucent) ===== */
+.glass {
+  @apply backdrop-blur-md rounded-2xl;
+  position: relative;
+  background: rgba(255,255,255,.58);
+  border: 1px solid var(--b);
+}
+html.dark .glass {
+  background: rgba(15,23,42,.6);
+  border: 1px solid var(--p);
+}
+
+/* ===== SOLID card (no transparency) ===== */
+.glass-solid {
+  @apply rounded-2xl border shadow-lg;
+  background: #ffffff;
+  border-color: rgba(203,213,225,.9); /* slate-300 */
+}
+html.dark .glass-solid {
+  background: #0b1224;               /* near slate-950 */
+  border-color: rgba(51,65,85,.9);   /* slate-700 */
+}
+
+/* ===== GRADIENT card (no transparency) ===== */
+.glass-gradient {
+  @apply rounded-2xl border shadow-lg;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(245,247,250,0.98) 100%);
+  border-color: rgba(203,213,225,.7);
+}
+html.dark .glass-gradient {
+  background: linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(2,6,23,0.98) 100%);
+  border-color: rgba(51,65,85,.7);
+}
+
+/* ===== popover/drawer container (solid) ===== */
+.popover-solid {
+  @apply rounded-2xl border shadow-2xl;
+  background: #ffffff;
+  border-color: rgba(226,232,240,.9); /* slate-200 */
+}
+html.dark .popover-solid {
+  background: #0f172a;               /* slate-900 */
+  border-color: rgba(30,41,59,.9);   /* slate-800 */
+}
+
+/* ===== interactive glow ===== */
+.glow-interactive {
+  transition: box-shadow .2s ease, transform .05s ease;
+}
+.glow-interactive:hover,
+.glow-interactive:focus-visible {
+  box-shadow: 0 0 12px 2px rgba(59,130,246,.35),
+              0 0 18px 4px rgba(139,92,246,.35);
+}
+.glow-interactive:active { transform: translateY(.5px); }
+
+/* ===== gradient button (kept) ===== */
+.btn-primary {
+  @apply inline-flex items-center justify-center text-white rounded-xl px-4 py-2;
+  background-color: var(--b);
+}
+
+/* ---- Notification Bell: fixed footprint & badge ---- */
+.bell-btn{
+  position: relative;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+}
+.bell-badge{
+  position: absolute; top: -4px; right: -4px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 9999px; font-size: 10px; line-height: 16px;
+  color: #fff; background: #ef4444; pointer-events: none;
+}
+
+/* --- subtle always-on glow (optional wrapper) --- */
+.glow-static {
+  box-shadow:
+    0 0 12px 2px rgba(59,130,246,.35),
+    0 0 18px 4px rgba(139,92,246,.35);
+}
+html.dark .glow-static {
+  box-shadow:
+    0 0 14px 3px rgba(59,130,246,.38),
+    0 0 22px 5px rgba(139,92,246,.40);
+}
+
+/* --- brand border helper --- */
+.border-accent { border-color: rgba(3,92,234,.35); }
+html.dark .border-accent { border-color: rgba(101,37,250,.45); }
+
+/* --- faint brand veil (for light header) --- */
+.bg-accent-faint {
+  background: linear-gradient(
+    90deg,
+    rgba(3, 92, 234, .10) 0%,
+    rgba(101, 37, 250, .10) 100%
+  );
+}
+html.dark .bg-accent-faint {
+  background: linear-gradient(
+    90deg,
+    rgba(3, 92, 234, .18) 0%,
+    rgba(101, 37, 250, .18) 100%
+  );
+}
+
+/* --- stronger brand veil (header, matches glow vibe more) --- */
+.bg-accent-strong {
+  background: linear-gradient(
+    90deg,
+    rgba(3, 92, 234, .22) 0%,
+    rgba(101, 37, 250, .22) 100%
+  );
+}
+html.dark .bg-accent-strong {
+  background: linear-gradient(
+    90deg,
+    rgba(3, 92, 234, .28) 0%,
+    rgba(101, 37, 250, .28) 100%
+  );
+}
+
+/* --- optional: tint the FIRST BODY ROW too --- */
+.table-brand-firstrow tbody tr:first-child {
+  background: linear-gradient(
+    90deg,
+    rgba(3, 92, 234, .12) 0%,
+    rgba(101, 37, 250, .12) 100%
+  ) !important;
+}
+html.dark .table-brand-firstrow tbody tr:first-child {
+  background: linear-gradient(
+    90deg,
+    rgba(3, 92, 234, .20) 0%,
+    rgba(101, 37, 250, .20) 100%
+  ) !important;
+}
+
+/* Header fill = SAME as border color */
+.bg-border-same { background-color: var(--b); }
+html.dark .bg-border-same { background-color: var(--p); }
+
+/* Make the primary button switch to the same border color in dark mode */
+html.dark .btn-primary { background-color: var(--p); }
+
+/* ---- Form controls (works in both themes) ---- */
+.input,
+select.input,
+textarea.input {
+  @apply w-full rounded-xl border px-3 py-2
+         bg-white text-slate-900 placeholder-slate-500
+         border-slate-300 outline-none;
+}
+
+/* Keep white field + dark text in dark mode so it stays readable */
+html.dark .input,
+html.dark select.input,
+html.dark textarea.input {
+  @apply bg-white text-slate-900 placeholder-slate-500 border-slate-600;
+}
+
+:root {     --chart-bar: #035cea; } /* light mode: dark blue */
+
