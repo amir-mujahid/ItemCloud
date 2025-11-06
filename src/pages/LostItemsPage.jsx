@@ -11,7 +11,8 @@ import {
   verifyUnlockCode,   
   reconcileBox,
   unlockViaQRCode,      
-  verifyUnlockCodeForQR, 
+  verifyUnlockCodeForQR,
+  validateAndUnlockQR 
 } from '../services/api';
 import { auth } from '../services/firebase';
 import { useAuth } from '../hooks/useAuth';
@@ -26,6 +27,8 @@ import QRScanner from '../components/QRScanner';
 import {
   setClaimAttemptStatus,          // (attemptId, status, extra?)
   finalizeSuccessfulClaim, // (attemptId)
+  recordQRScan,           
+  recordUnlockSuccess,
 } from '../services/claims';
 
 // Pretty-print expiry (localized)
@@ -227,77 +230,92 @@ async function applyScannedPayload(decoded) {
   setShowScanner(false);
   
   try {
-    if (!decoded) {
-      setScannerMsg(t('lost.scanEmpty') || 'Scanned empty QR.');
+    // 1. Validate QR content
+    if (!decoded || decoded.trim() === '') {
+      setScannerMsg(t('lost.scanEmpty') || 'Scanned empty QR code');
       return;
     }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(decoded);
-    } catch {
-      setScannerMsg(t('lost.scanInvalid') || 'Invalid QR format.');
-      return;
-    }
-
-    const { boxId, code } = parsed || {};
-    if (!boxId || !code) {
-      setScannerMsg(t('lost.scanMissing') || 'QR missing boxId or code.');
-      return;
-    }
-
-    // Show loading state
-    setBannerMsg(t('lost.unlocking') || 'Unlocking box...');
-
-    // Verify the code matches current session
-    const verification = await verifyUnlockCodeForQR(code, boxId);
     
-    if (!verification.ok) {
-      setScannerMsg(verification.reason || 'Invalid QR code');
-      setBannerMsg('');
+    const scannedBoxId = decoded.trim(); // QR contains just "box1" or "box2"
+    
+    // 2. Check if user has an active claim
+    if (!active || !active.boxId) {
+      setScannerMsg(t('lost.scanNoClaim') || 'Please claim an item first before scanning QR');
       return;
     }
-
-    // Check if this is the active session
-    if (active && active.boxId === boxId && active.code === code) {
-      // ✅ User scanned their own active session
-      try {
-        // Trigger unlock via RTDB
-        const result = await unlockViaQRCode(boxId, verification.attemptId);
-        
-        // Update Firestore
-        await setClaimAttemptStatus(verification.attemptId, 'successful', {
-          unlockMethod: 'qr_scan',
-          unlockedAt: Date.now(),
-          qrScannedAt: Date.now()
-        });
-        
-        // Finalize claim
-        await finalizeSuccessfulClaim(verification.attemptId);
-        
-        setBannerMsg(t('lost.claimSuccess') || 'Box unlocked successfully!');
-        setScannerMsg('');
-        
-        // Clear active after a delay
-        setTimeout(() => {
-          setActive(null);
-          setBannerMsg('');
-        }, 3000);
-        
-      } catch (err) {
-        console.error('QR unlock error:', err);
-        setScannerMsg(err?.message || 'Failed to unlock box');
-        setBannerMsg('');
-      }
-    } else {
-      // User scanned a different session or no active session
-      setScannerMsg(t('lost.scanWrongSession') || 'This QR code is not for your active claim');
-      setBannerMsg('');
+    
+    // 3. Check if scanned box matches active claim
+    if (active.boxId !== scannedBoxId) {
+      setScannerMsg(
+        t('lost.scanWrongBox') || 
+        `Wrong box! You claimed ${active.boxId}, but scanned ${scannedBoxId}`
+      );
+      return;
     }
-
+    
+    // 4. Show loading state
+    setBannerMsg(t('lost.unlocking') || 'Unlocking box... Please wait');
+    
+    const startTime = Date.now();
+    
+    // 5. Validate and trigger unlock
+    const result = await validateAndUnlockQR(scannedBoxId);
+    
+    // 6. Record QR scan in Firestore
+    if (active.attemptId) {
+      await recordQRScan(active.attemptId).catch(() => {});
+      
+      // Record unlock success
+      await recordUnlockSuccess(active.attemptId, 'qr_scan', startTime).catch(() => {});
+      
+      // Update status
+      await setClaimAttemptStatus(active.attemptId, 'successful', {
+        unlockMethod: 'qr_scan',
+        unlockedAt: Date.now(),
+        qrScannedAt: Date.now()
+      }).catch(() => {});
+      
+      // Finalize claim
+      await finalizeSuccessfulClaim(active.attemptId).catch(() => {});
+    }
+    
+    // 7. Success!
+    setBannerMsg(t('lost.claimSuccess') || 'Box unlocked successfully! 🎉');
+    setScannerMsg('');
+    
+    // Clear active session after delay
+    setTimeout(() => {
+      setActive(null);
+      setBannerMsg('');
+    }, 3000);
+    
   } catch (err) {
-    console.error('applyScannedPayload', err);
-    setScannerMsg(err?.message || 'Error verifying QR.');
+    console.error('QR unlock error:', err);
+    
+    // Handle specific error codes
+    let errorMessage = '';
+    
+    switch (err.code) {
+      case 'NO_SESSION':
+        errorMessage = t('lost.errorNoSession') || 'No unlock session found. Try claiming again.';
+        break;
+      case 'WRONG_USER':
+        errorMessage = t('lost.errorWrongUser') || 'This QR belongs to another user\'s claim.';
+        break;
+      case 'INVALID_STATUS':
+        errorMessage = t('lost.errorInvalidStatus') || 'This unlock session is no longer active.';
+        break;
+      case 'EXPIRED':
+        errorMessage = t('lost.errorExpired') || 'Session expired. Please request a new code.';
+        break;
+      case 'TIMEOUT':
+        errorMessage = t('lost.errorTimeout') || 'Box did not respond. Try keypad or scan again.';
+        break;
+      default:
+        errorMessage = err.message || t('lost.errorGeneral') || 'Failed to unlock box';
+    }
+    
+    setScannerMsg(errorMessage);
     setBannerMsg('');
   }
 }
