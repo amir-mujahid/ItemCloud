@@ -184,5 +184,194 @@ html.dark textarea.input {
   @apply bg-white text-slate-900 placeholder-slate-500 border-slate-600;
 }
 
-:root {     --chart-bar: #035cea; } /* light mode: dark blue */
+:root { --chart-bar: #035cea; } /* light mode: dark blue */
 
+/* ================================================================
+   QR SCANNER STYLES
+   ================================================================ */
+
+/* QR Scanner animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s ease-out;
+}
+
+/* QR Scanner video container */
+#html5qr-full-region {
+  border: none !important;
+  border-radius: 16px !important;
+  overflow: hidden;
+}
+
+#html5qr-full-region video {
+  border-radius: 16px !important;
+  object-fit: cover !important;
+  width: 100% !important;
+  height: auto !important;
+}
+
+/* Hide default QR scanner UI elements */
+#html5qr-full-region > div:first-child {
+  border: none !important;
+  padding: 0 !important;
+}
+
+/* QR scanner region styling */
+.qr-scanner-region {
+  position: relative;
+  min-height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qr-scanner-region video {
+  width: 100% !important;
+  height: auto !important;
+  border-radius: 16px;
+  display: block;
+}
+
+/* QR code target box (overlay on video) */
+#html5-qrcode-anchor-scan-type-change {
+  display: none !important;
+}
+
+/* Hide file upload option */
+#html5-qrcode-button-file-selection {
+  display: none !important;
+}
+
+/* Scanner info text styling */
+#html5-qrcode-anchor-scan-type-change,
+#html5qr-full-region__dashboard,
+#html5qr-full-region__dashboard_section {
+  display: none !important;
+}
+
+/* Custom scan frame styling */
+.qr-scanner-region::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 250px;
+  height: 250px;
+  border: 3px solid rgba(59, 130, 246, 0.6);
+  border-radius: 24px;
+  pointer-events: none;
+  z-index: 1;
+  box-shadow: 
+    0 0 0 9999px rgba(0, 0, 0, 0.5),
+    inset 0 0 20px rgba(59, 130, 246, 0.3);
+}
+
+html.dark .qr-scanner-region::before {
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 
+    0 0 0 9999px rgba(0, 0, 0, 0.6),
+    inset 0 0 20px rgba(139, 92, 246, 0.3);
+}
+
+/* Corner decorations for scan frame */
+.qr-scanner-region::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 250px;
+  height: 250px;
+  pointer-events: none;
+  z-index: 2;
+  background-image:
+    linear-gradient(to right, #3b82f6 3px, transparent 3px),
+    linear-gradient(to bottom, #3b82f6 3px, transparent 3px),
+    linear-gradient(to left, #3b82f6 3px, transparent 3px),
+    linear-gradient(to top, #3b82f6 3px, transparent 3px);
+  background-size: 30px 3px, 3px 30px, 30px 3px, 3px 30px;
+  background-position: 0 0, 100% 0, 100% 100%, 0 100%;
+  background-repeat: no-repeat;
+  border-radius: 24px;
+}
+
+html.dark .qr-scanner-region::after {
+  background-image:
+    linear-gradient(to right, #8b5cf6 3px, transparent 3px),
+    linear-gradient(to bottom, #8b5cf6 3px, transparent 3px),
+    linear-gradient(to left, #8b5cf6 3px, transparent 3px),
+    linear-gradient(to top, #8b5cf6 3px, transparent 3px);
+}
+
+/* Scanning animation */
+@keyframes scan-line {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+/* Add scanning line animation when active */
+.qr-scanner-region[data-scanning="true"]::before {
+  animation: scan-line 2s ease-in-out infinite;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .qr-scanner-region::before,
+  .qr-scanner-region::after {
+    width: 200px;
+    height: 200px;
+  }
+}
+
+/* Ensure proper z-index layering */
+#html5qr-full-region {
+  position: relative;
+  z-index: 0;
+}
+
+/* Success feedback animation */
+@keyframes successPulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(34, 197, 94, 0.8);
+  }
+}
+
+.qr-scan-success {
+  animation: successPulse 0.5s ease-in-out;
+}
