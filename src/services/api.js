@@ -65,9 +65,23 @@ async function writeCodeNodeTx({ boxId, attemptId, itemID, code, expiresAtMs }) 
 
   const result = await rRunTx(node, (cur) => {
     cur = cur || {};
-    if (cur.status === 'pending' && cur.attemptId && cur.attemptId !== attemptId) {
-      return;
+    
+    // ✅ Allow if:
+    // - No existing session, OR
+    // - Existing session is NOT pending, OR
+    // - Same attemptId (reusing), OR
+    // - Same user (reopen their own session)
+    const canWrite = 
+      !cur.status || 
+      cur.status !== 'pending' ||
+      cur.attemptId === attemptId ||
+      cur.byUid === byUid;
+    
+    if (!canWrite) {
+      // Block ONLY if it's a different user's pending session
+      return; // abort transaction
     }
+    
     return {
       boxId,
       itemID,
@@ -128,6 +142,38 @@ export async function requestUnlockCode(itemID, boxId) {
   await updateAllClaimStatus(attemptId, 'pending', { code, expiresAtMs });
 
   return payload;
+}
+
+// Public: request unlock code or reuse if user already has one
+export async function requestOrReuseUnlockCode(itemID, boxId) {
+  const currentUserId = auth.currentUser?.uid;
+  
+  // 1. Check if there's an existing pending session for this box
+  const existingSession = await readBoxUnlockNode(boxId);
+  
+  console.log('🔍 Checking existing session:', existingSession);
+  
+  // 2. If user already has a pending session, reuse it
+  if (
+    existingSession && 
+    existingSession.byUid === currentUserId && 
+    existingSession.status === 'pending' &&
+    Date.now() < existingSession.expiresAtMs
+  ) {
+    console.log('♻️ Reusing existing session for same user');
+    return {
+      boxId: existingSession.boxId,
+      itemID: existingSession.itemID,
+      code: existingSession.code,
+      expiresAtMs: existingSession.expiresAtMs,
+      attemptId: existingSession.attemptId,
+      reused: true // Flag to indicate this is reused
+    };
+  }
+  
+  // 3. Otherwise, create new session
+  console.log('🆕 Creating new unlock session');
+  return await requestUnlockCode(itemID, boxId);
 }
 
 // Public: cancel current code

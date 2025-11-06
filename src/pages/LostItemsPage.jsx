@@ -4,7 +4,7 @@ import { useI18n } from '../i18n';
 import {
   fetchLostItems,
   subscribeUnlockCode,
-  requestUnlockCode,
+  requestOrReuseUnlockCode,
   cancelUnlockCode,
   resendUnlockCode,
   expireUnlockCode,
@@ -22,8 +22,8 @@ import QRScanner from '../components/QRScanner';
 
 // AllClaims helpers (status updates + mirror to Claim)
 import {
-  setClaimAttemptStatus,          // (attemptId, status, extra?)
-  finalizeSuccessfulClaim, // (attemptId)
+  setClaimAttemptStatus,
+  finalizeSuccessfulClaim,
   recordQRScan,           
   recordUnlockSuccess,
 } from '../services/claims';
@@ -45,7 +45,7 @@ function formatExpires(expiresAtMs, lang = 'en') {
 export default function LostItemsPage() {
   const { t, i18n } = useI18n();
   const [items, setItems] = useState([]);
-  const [active, setActive] = useState(null); // { attemptId, boxId, itemID, code, expiresAtMs, status }
+  const [active, setActive] = useState(null);
   const [bannerMsg, setBannerMsg] = useState('');
   const { isAdmin } = useAuth();
   const [showScanner, setShowScanner] = useState(false);
@@ -78,11 +78,10 @@ export default function LostItemsPage() {
           ...data,
           boxId: data.boxId || prev?.boxId,
           itemID: data.itemID || prev?.itemID,
-          // IMPORTANT: prefer device/RTDB attemptId to avoid mismatches
           attemptId: data.attemptId || prev?.attemptId || null,
         };
 
-         // Mirror RTDB → Firestore while the page is open (no Cloud Functions needed)
+         // Mirror RTDB → Firestore while the page is open
          if (merged.attemptId) {
            if (merged.status === 'successful') {
              setClaimAttemptStatus(merged.attemptId, 'successful')
@@ -120,14 +119,13 @@ export default function LostItemsPage() {
 
   const grid = useMemo(() => items || [], [items]);
 
-  // Start claim: request code (this already creates AllClaims pending with the SAME attemptId)
+  // Start claim: request code or reuse existing
   async function startClaim(item) {
     setBannerMsg('');
     try {
-      // Ask locker for a code (creates AllClaims once inside)
-      const res = await requestUnlockCode(item.id, item.boxId);
+      // ✅ Use requestOrReuseUnlockCode to allow same user to reopen
+      const res = await requestOrReuseUnlockCode(item.id, item.boxId);
 
-      // Keep attempt id and code from the same source (no second create!)
       const payload = {
         ...res,
         boxId: res.boxId || item.boxId,
@@ -136,31 +134,40 @@ export default function LostItemsPage() {
       };
       setActive(payload);
 
-      // Notify/email (optional)
-      const user = auth.currentUser;
-      if (user) {
-        await pushNotif(user.uid, {
-          type: 'unlock',
-          title: t('lost.notifUnlockTitle', 'Unlock code generated'),
-          message: t('lost.notifUnlockBody', 'Item {{item}} • Box {{box}} • Expires at {{time}}', {
-            item: payload.itemID,
-            box: payload.boxId,
-            time: new Date(payload.expiresAtMs || payload.expiredAtMs).toLocaleTimeString(),
-          }),
-          link: '/lost',
-        }).catch(() => {});
+      // Show message if session was reused
+      if (res.reused) {
+        console.log('♻️ Session reused - showing existing code');
+        setBannerMsg(t('lost.sessionReused') || 'Your previous unlock code is still active');
+        setTimeout(() => setBannerMsg(''), 3000);
       }
-      if (user?.email) {
-        await sendUnlockEmail({
-          to_email: user.email,
-          to_name: user.displayName || 'there',
-          app_name: 'ItemCloud',
-          box: payload.boxId,
-          itemID: payload.itemID,
-          unlock_code: payload.code,
-          expires: formatExpires(payload.expiredAtMs || payload.expiresAtMs, i18n.language),
-          expires_in_minutes: 5,
-        }).catch((e) => console.warn('sendUnlockEmail failed:', e));
+
+      // Notify/email (only for new sessions, not reused)
+      if (!res.reused) {
+        const user = auth.currentUser;
+        if (user) {
+          await pushNotif(user.uid, {
+            type: 'unlock',
+            title: t('lost.notifUnlockTitle', 'Unlock code generated'),
+            message: t('lost.notifUnlockBody', 'Item {{item}} • Box {{box}} • Expires at {{time}}', {
+              item: payload.itemID,
+              box: payload.boxId,
+              time: new Date(payload.expiresAtMs || payload.expiredAtMs).toLocaleTimeString(),
+            }),
+            link: '/lost',
+          }).catch(() => {});
+        }
+        if (user?.email) {
+          await sendUnlockEmail({
+            to_email: user.email,
+            to_name: user.displayName || 'there',
+            app_name: 'ItemCloud',
+            box: payload.boxId,
+            itemID: payload.itemID,
+            unlock_code: payload.code,
+            expires: formatExpires(payload.expiredAtMs || payload.expiresAtMs, i18n.language),
+            expires_in_minutes: 5,
+          }).catch((e) => console.warn('sendUnlockEmail failed:', e));
+        }
       }
     } catch (e) {
       console.error(e);
@@ -168,7 +175,7 @@ export default function LostItemsPage() {
     }
   }
 
-  // Cancel an active code and persist "cancelled"
+  // Cancel an active code
   async function cancelActive() {
     try {
       if (!active?.boxId) return;
@@ -183,7 +190,7 @@ export default function LostItemsPage() {
     }
   }
 
-  // Resend code (keep same attemptId; flip back to pending)
+  // Resend code
   async function resendActive() {
     setBannerMsg('');
     try {
@@ -222,148 +229,135 @@ export default function LostItemsPage() {
     }
   }
 
-async function applyScannedPayload(decoded) {
-  console.log('📱 QR Scanned:', decoded);
-  
-  try {
-    // 1. Validate QR content
-    if (!decoded || decoded.trim() === '') {
-      console.error('❌ Empty QR code');
-      setScannerMsg('Scanned empty QR code');
+  async function applyScannedPayload(decoded) {
+    console.log('📱 QR Scanned:', decoded);
+    
+    try {
+      if (!decoded || decoded.trim() === '') {
+        console.error('❌ Empty QR code');
+        setScannerMsg('Scanned empty QR code');
+        setShowScanner(false);
+        return;
+      }
+      
+      const scannedBoxId = decoded.trim();
+      console.log('📦 Scanned Box ID:', scannedBoxId);
+      
+      if (!active || !active.boxId) {
+        console.error('❌ No active claim');
+        setScannerMsg('Please claim an item first before scanning QR');
+        setShowScanner(false);
+        return;
+      }
+      
+      console.log('📋 Active claim:', active);
+      
+      if (active.boxId !== scannedBoxId) {
+        console.error(`❌ Box mismatch: claimed ${active.boxId}, scanned ${scannedBoxId}`);
+        setScannerMsg(`Wrong box! You claimed ${active.boxId}, but scanned ${scannedBoxId}`);
+        setShowScanner(false);
+        return;
+      }
+      
       setShowScanner(false);
-      return;
-    }
-    
-    const scannedBoxId = decoded.trim();
-    console.log('📦 Scanned Box ID:', scannedBoxId);
-    
-    // 2. Check if user has an active claim
-    if (!active || !active.boxId) {
-      console.error('❌ No active claim');
-      setScannerMsg('Please claim an item first before scanning QR');
+      setBannerMsg('Unlocking box... Please wait');
+      setScannerMsg('');
+      
+      const startTime = Date.now();
+      
+      console.log('🔓 Calling validateAndUnlockQR...');
+      
+      const result = await validateAndUnlockQR(scannedBoxId);
+      
+      console.log('✅ Unlock result:', result);
+      
+      if (active.attemptId) {
+        console.log('💾 Recording to Firestore...');
+        
+        try {
+          await recordQRScan(active.attemptId);
+          console.log('✅ QR scan recorded');
+        } catch (err) {
+          console.warn('⚠️ Failed to record QR scan:', err);
+        }
+        
+        try {
+          await recordUnlockSuccess(active.attemptId, 'qr_scan', startTime);
+          console.log('✅ Unlock success recorded');
+        } catch (err) {
+          console.warn('⚠️ Failed to record unlock success:', err);
+        }
+        
+        try {
+          await setClaimAttemptStatus(active.attemptId, 'successful', {
+            unlockMethod: 'qr_scan',
+            unlockedAt: Date.now(),
+            qrScannedAt: Date.now()
+          });
+          console.log('✅ Status updated');
+        } catch (err) {
+          console.warn('⚠️ Failed to update status:', err);
+        }
+        
+        try {
+          await finalizeSuccessfulClaim(active.attemptId);
+          console.log('✅ Claim finalized');
+        } catch (err) {
+          console.warn('⚠️ Failed to finalize claim:', err);
+        }
+      }
+      
+      setBannerMsg('Box unlocked successfully! 🎉');
+      setScannerMsg('');
+      
+      setActive(prev => prev ? { ...prev, status: 'successful' } : null);
+      
+      setTimeout(() => {
+        setActive(null);
+        setBannerMsg('');
+      }, 3000);
+      
+    } catch (err) {
+      console.error('❌ QR unlock error:', err);
+      
       setShowScanner(false);
-      return;
-    }
-    
-    console.log('📋 Active claim:', active);
-    
-    // 3. Check if scanned box matches active claim
-    if (active.boxId !== scannedBoxId) {
-      console.error(`❌ Box mismatch: claimed ${active.boxId}, scanned ${scannedBoxId}`);
-      setScannerMsg(`Wrong box! You claimed ${active.boxId}, but scanned ${scannedBoxId}`);
-      setShowScanner(false);
-      return;
-    }
-    
-    // 4. Close scanner and show loading
-    setShowScanner(false);
-    setBannerMsg('Unlocking box... Please wait');
-    setScannerMsg('');
-    
-    const startTime = Date.now();
-    
-    console.log('🔓 Calling validateAndUnlockQR...');
-    
-    // 5. Validate and trigger unlock
-    const result = await validateAndUnlockQR(scannedBoxId);
-    
-    console.log('✅ Unlock result:', result);
-    
-    // 6. Record QR scan in Firestore (non-blocking, don't fail if this fails)
-    if (active.attemptId) {
-      console.log('💾 Recording to Firestore...');
       
-      // Wrap each Firestore call individually to prevent one failure from blocking others
-      try {
-        await recordQRScan(active.attemptId);
-        console.log('✅ QR scan recorded');
-      } catch (err) {
-        console.warn('⚠️ Failed to record QR scan:', err);
+      let errorMessage = '';
+      
+      switch (err?.code) {
+        case 'NOT_AUTHENTICATED':
+          errorMessage = 'You must be logged in to unlock';
+          break;
+        case 'INVALID_QR':
+          errorMessage = 'Invalid QR code format';
+          break;
+        case 'NO_SESSION':
+          errorMessage = 'No unlock session found. Try claiming again.';
+          break;
+        case 'WRONG_USER':
+          errorMessage = 'This QR belongs to another user\'s claim.';
+          break;
+        case 'INVALID_STATUS':
+          errorMessage = 'This unlock session is no longer active.';
+          break;
+        case 'EXPIRED':
+          errorMessage = 'Session expired. Please request a new code.';
+          break;
+        case 'TIMEOUT':
+          errorMessage = 'Box did not respond. Try keypad or scan again.';
+          break;
+        default:
+          errorMessage = err?.message || 'Failed to unlock box';
       }
       
-      try {
-        await recordUnlockSuccess(active.attemptId, 'qr_scan', startTime);
-        console.log('✅ Unlock success recorded');
-      } catch (err) {
-        console.warn('⚠️ Failed to record unlock success:', err);
-      }
-      
-      try {
-        await setClaimAttemptStatus(active.attemptId, 'successful', {
-          unlockMethod: 'qr_scan',
-          unlockedAt: Date.now(),
-          qrScannedAt: Date.now()
-        });
-        console.log('✅ Status updated');
-      } catch (err) {
-        console.warn('⚠️ Failed to update status:', err);
-      }
-      
-      try {
-        await finalizeSuccessfulClaim(active.attemptId);
-        console.log('✅ Claim finalized');
-      } catch (err) {
-        console.warn('⚠️ Failed to finalize claim:', err);
-      }
-    }
-    
-    // 7. Success! (show this even if Firestore fails)
-    setBannerMsg('Box unlocked successfully! 🎉');
-    setScannerMsg('');
-    
-    // Update local state to successful
-    setActive(prev => prev ? { ...prev, status: 'successful' } : null);
-    
-    // Clear active session after delay
-    setTimeout(() => {
-      setActive(null);
+      setScannerMsg(errorMessage);
       setBannerMsg('');
-    }, 3000);
-    
-  } catch (err) {
-    console.error('❌ QR unlock error:', err);
-    
-    // Close scanner on error
-    setShowScanner(false);
-    
-    // Handle specific error codes
-    let errorMessage = '';
-    
-    switch (err?.code) {
-      case 'NOT_AUTHENTICATED':
-        errorMessage = 'You must be logged in to unlock';
-        break;
-      case 'INVALID_QR':
-        errorMessage = 'Invalid QR code format';
-        break;
-      case 'NO_SESSION':
-        errorMessage = 'No unlock session found. Try claiming again.';
-        break;
-      case 'WRONG_USER':
-        errorMessage = 'This QR belongs to another user\'s claim.';
-        break;
-      case 'INVALID_STATUS':
-        errorMessage = 'This unlock session is no longer active.';
-        break;
-      case 'EXPIRED':
-        errorMessage = 'Session expired. Please request a new code.';
-        break;
-      case 'TIMEOUT':
-        errorMessage = 'Box did not respond. Try keypad or scan again.';
-        break;
-      default:
-        errorMessage = err?.message || 'Failed to unlock box';
     }
-    
-    setScannerMsg(errorMessage);
-    setBannerMsg('');
   }
-}
 
   const claimsLocked = Boolean(active && active.status === 'pending');
   const lockedBox = active?.boxId;
 
-  // Data for Excel export
   const exportRows = grid.map((it) => ({
     id: it.id,
     itemID: it.itemID || it.id,
@@ -395,7 +389,6 @@ async function applyScannedPayload(decoded) {
         </div>
       )}
 
-      {/* Put QRScanner *inside* the return, conditionally */}
       {showScanner && (
         <QRScanner
           onScan={(decoded) => applyScannedPayload(decoded)}
@@ -409,7 +402,9 @@ async function applyScannedPayload(decoded) {
       )}
 
       {!!scannerMsg && (
-        <div className="mt-2 rounded p-2 bg-slate-50 text-slate-700">{scannerMsg}</div>
+        <div className="mt-2 rounded p-2 bg-slate-50 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+          {scannerMsg}
+        </div>
       )}
 
       {active && (
@@ -450,7 +445,7 @@ async function applyScannedPayload(decoded) {
                   <span className="text-red-600">{t('lost.expired')}</span>
                 ) : active.status === 'cancelled' ? (
                   <span className="text-amber-600">{t('lost.cancelled')}</span>
-                ) : active.status === 'used' ? (
+                ) : active.status === 'used' || active.status === 'successful' ? (
                   <span className="text-emerald-600">{t('lost.claimed')}</span>
                 ) : null}
               </div>
