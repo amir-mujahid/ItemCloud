@@ -134,7 +134,7 @@ export default function AvgTimeToClaimTrend({ months = 6 }) {
           </div>
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-              {t('charts.avgTimeToClaim', 'Avg Time to Claim')}
+              {t('charts.avgTimeToClaim', { n: months })}
             </h3>
             <p className="text-sm text-slate-500 dark:text-slate-400">Last {months} months</p>
           </div>

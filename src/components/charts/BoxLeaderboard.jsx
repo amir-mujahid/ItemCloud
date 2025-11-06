@@ -91,11 +91,11 @@ export default function BoxLeaderboard({
     })();
   }, [collectionName, uid, isAdmin, days, top]);
 
-  const chartTitle =
-    title ||
-    (collectionName === 'LostItems'
-      ? t('charts.boxLeaderboardLost', 'Top Boxes - Lost Items')
-      : t('charts.boxLeaderboardClaims', 'Top Boxes - Claims'));
+const chartTitle =
+  title ||
+  (collectionName === 'LostItems'
+    ? t('charts.boxLeaderboardLost', { n: days })
+    : t('charts.boxLeaderboardClaims', { n: days }));
 
   const height = useMemo(() => Math.max(280, 60 + rows.length * 40), [rows.length]);
 
