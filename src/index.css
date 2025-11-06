@@ -384,69 +384,29 @@ html.dark .qr-scanner-region::after {
 @keyframes scaleIn {
   from {
     opacity: 0;
-    transform: scale(0.95);
+    transform: scale(0.96) translateZ(0);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1) translateZ(0);
   }
 }
 
 .animate-scaleIn {
-  animation: scaleIn 0.2s ease-out;
+  animation: scaleIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Performance optimizations for draggable elements */
-.react-draggable {
-  will-change: transform;
-}
-
-.react-draggable-dragging {
-  transition: none !important;
-}
-
-/* Smooth transitions for non-dragging state */
-.glass-gradient,
-.glass-solid {
-  transition: box-shadow 0.3s ease, transform 0.3s ease;
-}
-
-/* Prevent layout shift during drag */
-.react-draggable-dragging * {
-  pointer-events: none;
-}
-
-/* Modal backdrop animation */
-@keyframes backdropFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
+/* Optimize backdrop rendering */
+@supports (backdrop-filter: blur(4px)) {
+  .backdrop-blur-sm {
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
   }
 }
 
-.modal-backdrop {
-  animation: backdropFadeIn 0.2s ease-out;
-}
-
-/* Improve rendering performance for modals */
-.modal-content {
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  perspective: 1000px;
-}
-
-/* Smooth height transitions for collapsible sections */
-.transition-height {
-  transition: height 0.3s ease-in-out;
-}
-
-/* GPU-accelerated animations */
+/* GPU acceleration for smooth animations */
 @media (prefers-reduced-motion: no-preference) {
-  .animate-scaleIn,
-  .animate-slideUp,
-  .animate-fadeIn {
+  .animate-scaleIn {
     will-change: transform, opacity;
   }
 }
@@ -455,9 +415,14 @@ html.dark .qr-scanner-region::after {
 @media (prefers-reduced-motion: reduce) {
   .animate-scaleIn,
   .animate-slideUp,
-  .animate-fadeIn,
-  .react-draggable {
-    animation: none !important;
-    transition: none !important;
+  .animate-fadeIn {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
+}
+
+/* Prevent body scroll when modal is open */
+body.modal-open {
+  overflow: hidden;
 }
