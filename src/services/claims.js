@@ -17,7 +17,6 @@ export async function nextClaimId() {
   return `C${String(idNum).padStart(4, '0')}`;
 }
 
-/* =========== Create attempt in AllClaims (pending) =========== */
 export async function createClaimAttempt({ uid, itemID, box, code, expiresAtMs }) {
   if (!uid)   throw new Error("createClaimAttempt: uid is required");
   if (!itemID) throw new Error("createClaimAttempt: itemID is required");
@@ -33,10 +32,38 @@ export async function createClaimAttempt({ uid, itemID, box, code, expiresAtMs }
     expiresAtMs: expiresAtMs ?? null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    
+    // NEW: Unlock tracking fields
+    unlockMethod: '',        // 'keypad' | 'qr_scan'
+    unlockedAt: null,
+    unlockDuration: 0,
+    qrScannedAt: null,
+    doorOpenedAt: null,
+    claimCompletedAt: null
   });
   return claimId;
 }
 
+export async function recordQRScan(attemptId) {
+  if (!attemptId) return;
+  await updateDoc(doc(db, 'AllClaims', attemptId), {
+    qrScannedAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
+// NEW: Helper to record unlock success with method
+export async function recordUnlockSuccess(attemptId, method, startTime) {
+  if (!attemptId) return;
+  const unlockDuration = Date.now() - startTime;
+  
+  await updateDoc(doc(db, 'AllClaims', attemptId), {
+    unlockMethod: method,
+    unlockedAt: serverTimestamp(),
+    unlockDuration,
+    updatedAt: serverTimestamp()
+  });
+}
 /* =========== Update attempt status in AllClaims =========== */
 export async function setClaimAttemptStatus(claimId, status, extra = {}) {
   if (!claimId) return;
@@ -116,6 +143,14 @@ export async function createAllClaimPending({
     expiresAtMs,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    
+    // NEW: Tracking fields
+    unlockMethod: '',
+    unlockedAt: null,
+    unlockDuration: 0,
+    qrScannedAt: null,
+    doorOpenedAt: null,
+    claimCompletedAt: null
   }, { merge: true });
   return id;
 }

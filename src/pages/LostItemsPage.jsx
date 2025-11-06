@@ -10,6 +10,8 @@ import {
   expireUnlockCode,
   verifyUnlockCode,   
   reconcileBox,
+  unlockViaQRCode,      
+  verifyUnlockCodeForQR, 
 } from '../services/api';
 import { auth } from '../services/firebase';
 import { useAuth } from '../hooks/useAuth';
@@ -220,94 +222,85 @@ export default function LostItemsPage() {
     }
   }
 
-  // inside LostItemsPage component, after resendActive()
-  async function applyScannedPayload(decoded) {
-    setScannerMsg('');
-    try {
-      if (!decoded) {
-        setScannerMsg(t('lost.scanEmpty') || 'Scanned empty QR.');
-        return;
-      }
-
-      let parsed;
-      try {
-        parsed = JSON.parse(decoded);
-      } catch {
-        setScannerMsg(t('lost.scanInvalid') || 'Invalid QR format.');
-        return;
-      }
-
-      const { boxId, uid, code } = parsed || {};
-      if (!boxId || !uid || !code) {
-        setScannerMsg(t('lost.scanMissing') || 'QR missing boxId, uid, or code.');
-        return;
-      }
-
-      // Check against RTDB unlock node
-      const { getDatabase, ref, get, update } = await import('firebase/database');
-      const { getFirestore, collection, addDoc, serverTimestamp } = await import('firebase/firestore');
-      const { rtdb, db } = await import('../services/firebase');
-
-      const unlockRef = ref(rtdb, `/UnlockCodes/${boxId}`);
-      const snap = await get(unlockRef);
-
-      if (!snap.exists()) {
-        setScannerMsg(t('lost.scanNotFound') || 'No record found for that box.');
-        return;
-      }
-
-      const data = snap.val();
-      const expectedCode = (data.code || '').toUpperCase();
-      const expectedUid = (data.uid || '');
-
-      if (expectedCode !== code.toUpperCase() || expectedUid !== uid) {
-        setScannerMsg(t('lost.scanBad') || 'QR does not match this box.');
-        return;
-      }
-
-      if (data.status !== 'pending') {
-        setScannerMsg(t('lost.scanExpired') || 'This code is not active.');
-        return;
-      }
-
-      if (data.expiresAtMs && Date.now() > Number(data.expiresAtMs)) {
-        setScannerMsg(t('lost.scanExpired') || 'QR expired.');
-        return;
-      }
-
-      // ✅ Valid QR — record claim in Firestore
-      const claimDoc = await addDoc(collection(db, 'Claim'), {
-        box: boxId,
-        code,
-        uid,
-        status: 'successful',
-        method: 'qr-scan',
-        createdAt: serverTimestamp(),
-        claimedAt: serverTimestamp(),
-      });
-      const claimId = claimDoc.id;
-
-      // Update RTDB to mark successful
-      await update(unlockRef, {
-        status: 'successful',
-        attemptId: claimId,
-        updatedAtMs: Date.now(),
-      });
-
-      // Mirror to your claims service
-      await setClaimAttemptStatus(claimId, 'successful', { method: 'qr-scan' }).catch(() => {});
-      await finalizeSuccessfulClaim(claimId).catch(() => {});
-
-      setBannerMsg(t('lost.claimSuccess'));
-      setShowScanner(false);
-      setTimeout(() => setBannerMsg(''), 3000);
-    } catch (err) {
-      console.error('applyScannedPayload', err);
-      setScannerMsg(err?.message || 'Error verifying QR.');
+async function applyScannedPayload(decoded) {
+  setScannerMsg('');
+  setShowScanner(false);
+  
+  try {
+    if (!decoded) {
+      setScannerMsg(t('lost.scanEmpty') || 'Scanned empty QR.');
+      return;
     }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(decoded);
+    } catch {
+      setScannerMsg(t('lost.scanInvalid') || 'Invalid QR format.');
+      return;
+    }
+
+    const { boxId, code } = parsed || {};
+    if (!boxId || !code) {
+      setScannerMsg(t('lost.scanMissing') || 'QR missing boxId or code.');
+      return;
+    }
+
+    // Show loading state
+    setBannerMsg(t('lost.unlocking') || 'Unlocking box...');
+
+    // Verify the code matches current session
+    const verification = await verifyUnlockCodeForQR(code, boxId);
+    
+    if (!verification.ok) {
+      setScannerMsg(verification.reason || 'Invalid QR code');
+      setBannerMsg('');
+      return;
+    }
+
+    // Check if this is the active session
+    if (active && active.boxId === boxId && active.code === code) {
+      // ✅ User scanned their own active session
+      try {
+        // Trigger unlock via RTDB
+        const result = await unlockViaQRCode(boxId, verification.attemptId);
+        
+        // Update Firestore
+        await setClaimAttemptStatus(verification.attemptId, 'successful', {
+          unlockMethod: 'qr_scan',
+          unlockedAt: Date.now(),
+          qrScannedAt: Date.now()
+        });
+        
+        // Finalize claim
+        await finalizeSuccessfulClaim(verification.attemptId);
+        
+        setBannerMsg(t('lost.claimSuccess') || 'Box unlocked successfully!');
+        setScannerMsg('');
+        
+        // Clear active after a delay
+        setTimeout(() => {
+          setActive(null);
+          setBannerMsg('');
+        }, 3000);
+        
+      } catch (err) {
+        console.error('QR unlock error:', err);
+        setScannerMsg(err?.message || 'Failed to unlock box');
+        setBannerMsg('');
+      }
+    } else {
+      // User scanned a different session or no active session
+      setScannerMsg(t('lost.scanWrongSession') || 'This QR code is not for your active claim');
+      setBannerMsg('');
+    }
+
+  } catch (err) {
+    console.error('applyScannedPayload', err);
+    setScannerMsg(err?.message || 'Error verifying QR.');
+    setBannerMsg('');
   }
-
-
+}
 
   const claimsLocked = Boolean(active && active.status === 'pending');
   const lockedBox = active?.boxId;
@@ -429,12 +422,6 @@ export default function LostItemsPage() {
                 </button>
               </div>
               <div className="flex items-center gap-3">
-                {isAdmin && (
-                  <ExportButton
-                    rows={exportRows}
-                    filename={`lost-items-${new Date().toISOString().slice(0, 10)}.xlsx`}
-                  />
-                )}
                 <button
                   className="rounded-xl px-4 py-2 border"
                   onClick={() => {

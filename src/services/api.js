@@ -21,6 +21,13 @@ import {
   updateAllClaimStatus,
 } from './claims';
 
+import {
+  triggerQRUnlock,
+  listenUnlockConfirmation,
+  cancelQRUnlock
+} from './rtdb';
+
+
 // ---------------- Lost items ----------------
 export async function fetchLostItems() {
   const q = query(
@@ -200,31 +207,63 @@ export async function reconcileBox(boxId) {
 }
 
 /**
+ * Trigger unlock via QR code scan
+ * Returns a promise that resolves when ESP32 confirms unlock
+ */
+export async function unlockViaQRCode(boxId, attemptId) {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Not authenticated');
+  
+  // Trigger unlock request in RTDB
+  await triggerQRUnlock({ box: boxId, attemptId, uid });
+  
+  // Wait for ESP32 confirmation with timeout
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      cancelQRUnlock({ box: boxId }).catch(() => {});
+      reject(new Error('Unlock timeout - ESP32 did not respond'));
+    }, 10000); // 10 second timeout
+    
+    const unsubscribe = listenUnlockConfirmation(boxId, (result) => {
+      clearTimeout(timeout);
+      unsubscribe();
+      
+      if (result.success) {
+        resolve(result);
+      } else {
+        reject(new Error('Unlock failed'));
+      }
+    });
+  });
+}
+/**
  * Verify an unlock code by scanning UnlockCodes/* nodes and returning the matching node.
  * Returns { ok: true, attemptId, itemId, boxId, status } or { ok: false }.
  *
  * NOTE: This reads the entire UnlockCodes node once client-side. For production use a
  * secure server endpoint or Cloud Function that validates the code and returns the attemptId.
  */
-export async function verifyUnlockCode(code) {
-  if (!code) return { ok: false };
+export async function verifyUnlockCodeForQR(code, boxId) {
+  if (!code || !boxId) return { ok: false, reason: 'Missing code or boxId' };
 
-  // Read all UnlockCodes children once
-  const snap = await rGet(rRef(rtdb, 'UnlockCodes'));
-  const all = snap.val() || {};
-
-  // Find first match by exact code (case-sensitive) and status pending/successful
-  for (const [boxId, node] of Object.entries(all)) {
-    if (!node) continue;
-    if (node.code === code) {
-      return {
-        ok: true,
-        attemptId: node.attemptId || null,
-        itemId: node.itemID || null,
-        boxId,
-        status: node.status || null,
-      };
-    }
-  }
-  return { ok: false };
+  const snap = await rGet(rRef(rtdb, `UnlockCodes/${boxId}`));
+  const node = snap.val();
+  
+  if (!node) return { ok: false, reason: 'No unlock session found' };
+  
+  if (node.code !== code) return { ok: false, reason: 'Invalid code' };
+  
+  if (node.status !== 'pending') return { ok: false, reason: 'Session not active' };
+  
+  if (Date.now() >= node.expiresAtMs) return { ok: false, reason: 'Session expired' };
+  
+  return {
+    ok: true,
+    attemptId: node.attemptId || null,
+    itemId: node.itemID || null,
+    boxId: node.boxId || boxId,
+    status: node.status,
+    uid: node.uid || node.byUid
+  };
 }
