@@ -482,7 +482,7 @@ export default function LostItemsPage() {
                     setScannerMsg('');
                   }}
                 >
-                  {t('lost.scanQr') || 'Scan QR'}
+                  {t('Scan QR') || 'Scan QR'}
                 </button>
               </div>
             </div>
