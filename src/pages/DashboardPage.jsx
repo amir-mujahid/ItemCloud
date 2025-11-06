@@ -128,115 +128,115 @@ export default function DashboardPage() {
       </div>
 
       {isAdmin ? (
-        // ================== ADMIN VIEW ==================
-        <>
-          {/* Overview Section */}
-          <div>
-            <SectionHeader
-              icon={<ChartBarIcon className="w-5 h-5" />}
-              title={t('dashboard.overview', 'Campus Overview')}
-              subtitle={t('dashboard.overviewSub', 'System-wide analytics')}
-            />
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <MonthlyLostChart />
-              </div>
-              <StatusBreakdownPie />
-            </div>
-          </div>
+  // ================== ADMIN VIEW ==================
+  <>
+    {/* Overview Section */}
+    <div>
+      <SectionHeader
+        icon={<ChartBarIcon className="w-5 h-5" />}
+        title={t('dashboard.overview', 'Campus Overview')}
+        subtitle={t('dashboard.overviewSub', 'System-wide analytics')}
+      />
+      <div className="grid gap-6 lg:grid-cols-3 items-stretch">
+        <div className="lg:col-span-2">
+          <MonthlyLostChart />
+        </div>
+        <StatusBreakdownPie />
+      </div>
+    </div>
 
-          {/* Activity Patterns */}
-          <div>
-            <SectionHeader
-              icon={<ClockIcon className="w-5 h-5" />}
-              title={t('dashboard.activityPatterns', 'Activity Patterns')}
-              subtitle={t('dashboard.activityPatternsSub', 'When items are lost and claimed')}
-            />
-            <div className="grid gap-6 lg:grid-cols-3">
-              <DailyTrendSparkline uid={user.uid} days={30} />
-              <div className="lg:col-span-2">
-                <HourlyActivityChart days={30} />
-              </div>
-            </div>
-          </div>
+    {/* Activity Patterns */}
+    <div>
+      <SectionHeader
+        icon={<ClockIcon className="w-5 h-5" />}
+        title={t('dashboard.activityPatterns', 'Activity Patterns')}
+        subtitle={t('dashboard.activityPatternsSub', 'When items are lost and claimed')}
+      />
+      <div className="grid gap-6 lg:grid-cols-3 items-stretch">
+        <DailyTrendSparkline uid={user.uid} days={30} />
+        <div className="lg:col-span-2">
+          <HourlyActivityChart days={30} />
+        </div>
+      </div>
+    </div>
 
-          {/* Performance Metrics */}
-          <div>
-            <SectionHeader
-              icon={<TrophyIcon className="w-5 h-5" />}
-              title={t('dashboard.performance', 'Performance Metrics')}
-              subtitle={t('dashboard.performanceSub', 'Trends and efficiency')}
-            />
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <MyYearLossesChart />
-              </div>
-              <BoxLeaderboard top={8} />
-            </div>
-          </div>
+    {/* Performance Metrics */}
+    <div>
+      <SectionHeader
+        icon={<TrophyIcon className="w-5 h-5" />}
+        title={t('dashboard.performance', 'Performance Metrics')}
+        subtitle={t('dashboard.performanceSub', 'Trends and efficiency')}
+      />
+      <div className="grid gap-6 lg:grid-cols-3 items-stretch">
+        <div className="lg:col-span-2">
+          <MyYearLossesChart />
+        </div>
+        <BoxLeaderboard top={8} />
+      </div>
+    </div>
 
-          {/* Outcomes & Efficiency */}
-          <div>
-            <SectionHeader
-              icon={<CubeIcon className="w-5 h-5" />}
-              title={t('dashboard.outcomes', 'Outcomes & Efficiency')}
-              subtitle={t('dashboard.outcomesSub', 'Success rates and timing')}
-            />
-            <div className="grid gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2">
-                <OutcomeTrendChart months={6} />
-              </div>
-              <AvgTimeToClaimTrend months={6} />
-            </div>
-          </div>
+    {/* Outcomes & Efficiency */}
+    <div>
+      <SectionHeader
+        icon={<CubeIcon className="w-5 h-5" />}
+        title={t('dashboard.outcomes', 'Outcomes & Efficiency')}
+        subtitle={t('dashboard.outcomesSub', 'Success rates and timing')}
+      />
+      <div className="grid gap-6 lg:grid-cols-3 items-stretch">
+        <div className="lg:col-span-2">
+          <OutcomeTrendChart months={6} />
+        </div>
+        <AvgTimeToClaimTrend months={6} />
+      </div>
+    </div>
 
-          {/* Heat Map */}
-          <div>
-            <SectionHeader
-              icon={<SparklesIcon className="w-5 h-5" />}
-              title={t('dashboard.heatmap', 'Activity Heatmap')}
-              subtitle={t('dashboard.heatmapSub', 'Busiest times throughout the week')}
-            />
-            <PeakHeatMap />
-          </div>
+    {/* Heat Map */}
+    <div>
+      <SectionHeader
+        icon={<SparklesIcon className="w-5 h-5" />}
+        title={t('dashboard.heatmap', 'Activity Heatmap')}
+        subtitle={t('dashboard.heatmapSub', 'Busiest times throughout the week')}
+      />
+      <PeakHeatMap />
+    </div>
 
-          {/* Pending Claims */}
-          <div>
-            <SectionHeader
-              icon={<UserGroupIcon className="w-5 h-5" />}
-              title={t('dashboard.pending', 'Pending Claims')}
-              subtitle={t('dashboard.pendingSub', 'Active unlock sessions')}
-            />
-            <PendingClaims uid={user.uid} admin={isAdmin} />
-          </div>
-        </>
-      ) : (
-        // ================== USER VIEW ==================
-        <>
-          {/* My Activity */}
-          <div>
-            <SectionHeader
-              icon={<ChartBarIcon className="w-5 h-5" />}
-              title={t('dashboard.myActivity', 'My Activity')}
-              subtitle={t('dashboard.myActivitySub', 'Your claim history')}
-            />
-            <div className="grid gap-6 md:grid-cols-2">
-              <MonthlyLostChart />
-              <MyYearLossesChart />
-            </div>
-          </div>
+    {/* Pending Claims */}
+    <div>
+      <SectionHeader
+        icon={<UserGroupIcon className="w-5 h-5" />}
+        title={t('dashboard.pending', 'Pending Claims')}
+        subtitle={t('dashboard.pendingSub', 'Active unlock sessions')}
+      />
+      <PendingClaims uid={user.uid} admin={isAdmin} />
+    </div>
+  </>
+) : (
+  // ================== USER VIEW ==================
+  <>
+    {/* My Activity */}
+    <div>
+      <SectionHeader
+        icon={<ChartBarIcon className="w-5 h-5" />}
+        title={t('dashboard.myActivity', 'My Activity')}
+        subtitle={t('dashboard.myActivitySub', 'Your claim history')}
+      />
+      <div className="grid gap-6 md:grid-cols-2 items-stretch">
+        <MonthlyLostChart />
+        <MyYearLossesChart />
+      </div>
+    </div>
 
-          {/* Campus Trends */}
-          <div>
-            <SectionHeader
-              icon={<SparklesIcon className="w-5 h-5" />}
-              title={t('dashboard.campusTrends', 'Campus Trends')}
-              subtitle={t('dashboard.campusTrendsSub', 'When items are typically lost')}
-            />
-            <PeakHeatMap />
-          </div>
-        </>
-      )}
+    {/* Campus Trends */}
+    <div>
+      <SectionHeader
+        icon={<SparklesIcon className="w-5 h-5" />}
+        title={t('dashboard.campusTrends', 'Campus Trends')}
+        subtitle={t('dashboard.campusTrendsSub', 'When items are typically lost')}
+      />
+      <PeakHeatMap />
+    </div>
+  </>
+)}
     </div>
   );
 }

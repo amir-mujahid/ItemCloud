@@ -104,15 +104,15 @@ export default function MyYearLossesChart() {
 
   if (loading) {
     return (
-      <div className="glass-solid rounded-2xl p-6 animate-pulse">
+      <div className="glass-solid rounded-2xl p-6 animate-pulse h-full">
         <div className="h-8 bg-slate-200 dark:bg-slate-700 rounded w-1/2 mb-4"></div>
-        <div className="h-64 bg-slate-200 dark:bg-slate-700 rounded"></div>
+        <div className="flex-1 bg-slate-200 dark:bg-slate-700 rounded"></div>
       </div>
     );
   }
 
   return (
-    <div className="glass-solid rounded-2xl p-6 hover:shadow-xl transition-all">
+    <div className="glass-solid rounded-2xl p-6 hover:shadow-xl transition-all h-full flex flex-col">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
@@ -137,7 +137,7 @@ export default function MyYearLossesChart() {
         )}
       </div>
 
-      <div className="h-64">
+      <div className="flex-1 min-h-[280px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
