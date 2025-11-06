@@ -250,29 +250,89 @@ export async function unlockViaQRCode(boxId, attemptId) {
 }
 
 /**
- * Verify unlock code for QR scanning
+ * Validate and trigger QR unlock
+ * Sets unlock request in RTDB, ESP32 will detect and unlock
+ * No need to wait for ESP32 confirmation
  */
-export async function verifyUnlockCodeForQR(code, boxId) {
-  if (!code || !boxId) return { ok: false, reason: 'Missing code or boxId' };
-
-  const snap = await rGet(rRef(rtdb, `UnlockCodes/${boxId}`));
-  const node = snap.val();
+export async function validateAndUnlockQR(scannedBoxId) {
+  const currentUserId = auth.currentUser?.uid;
   
-  if (!node) return { ok: false, reason: 'No unlock session found' };
+  console.log('🔍 validateAndUnlockQR called with boxId:', scannedBoxId);
+  console.log('🔍 Current user ID:', currentUserId);
   
-  if (node.code !== code) return { ok: false, reason: 'Invalid code' };
+  if (!currentUserId) {
+    const err = new Error('You must be logged in to unlock');
+    err.code = 'NOT_AUTHENTICATED';
+    throw err;
+  }
   
-  if (node.status !== 'pending') return { ok: false, reason: 'Session not active' };
+  if (!scannedBoxId) {
+    const err = new Error('Invalid QR code - no box ID found');
+    err.code = 'INVALID_QR';
+    throw err;
+  }
   
-  if (Date.now() >= node.expiresAtMs) return { ok: false, reason: 'Session expired' };
+  // 1. Get unlock session from RTDB
+  const snap = await rGet(rRef(rtdb, `UnlockCodes/${scannedBoxId}`));
+  const session = snap.val();
   
+  console.log('🔍 Session data:', session);
+  
+  // 2. Validation checks
+  if (!session) {
+    const err = new Error('No active unlock session found for this box');
+    err.code = 'NO_SESSION';
+    throw err;
+  }
+  
+  // Check if session belongs to current user
+  if (session.byUid !== currentUserId) {
+    const err = new Error('This unlock session belongs to another user. Please claim your own item first.');
+    err.code = 'WRONG_USER';
+    throw err;
+  }
+  
+  // Check status
+  if (session.status !== 'pending') {
+    const err = new Error(`Cannot unlock: session is ${session.status}`);
+    err.code = 'INVALID_STATUS';
+    throw err;
+  }
+  
+  // Check expiration
+  if (Date.now() >= session.expiresAtMs) {
+    const err = new Error('This unlock session has expired. Please request a new code.');
+    err.code = 'EXPIRED';
+    throw err;
+  }
+  
+  console.log('✅ All validations passed');
+  
+  // 3. Update RTDB - Set unlock request and status
+  // ESP32 will monitor this and unlock when it sees triggered = true
+  const now = Date.now();
+  await rUpdate(rRef(rtdb, `UnlockCodes/${scannedBoxId}`), {
+    status: 'successful',
+    unlockRequest: {
+      method: 'qr_scan',
+      requestedAt: now,
+      triggered: true,
+      processedAt: 0  // ESP32 will update this after unlocking
+    },
+    lastUnlockMethod: 'qr_scan',
+    lastUnlockAt: now,
+    unlockAttempts: (session.unlockAttempts || 0) + 1
+  });
+  
+  console.log('✅ RTDB updated - ESP32 will detect and unlock');
+  
+  // 4. Return success immediately - no need to wait for ESP32
   return {
-    ok: true,
-    attemptId: node.attemptId || null,
-    itemId: node.itemID || null,
-    boxId: node.boxId || boxId,
-    status: node.status,
-    uid: node.uid || node.byUid
+    success: true,
+    boxId: scannedBoxId,
+    attemptId: session.attemptId,
+    method: 'qr_scan',
+    requestedAt: now
   };
 }
 
