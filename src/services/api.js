@@ -78,7 +78,7 @@ async function writeCodeNodeTx({ boxId, attemptId, itemID, code, expiresAtMs }) 
     if (cur.status === 'pending' && cur.attemptId && cur.attemptId !== attemptId) {
       return; // abort tx
     }
-    // Build fresh payload; DO NOT carry forward expiredAtMs/cancelledAtMs
+    // ✅ Build fresh payload WITH NEW STRUCTURE
     return {
       // identity
       boxId,
@@ -97,6 +97,17 @@ async function writeCodeNodeTx({ boxId, attemptId, itemID, code, expiresAtMs }) 
       cancelledAtMs: null,
       liveInput: '',
       liveInputAtMs: null,
+
+      // ✅ NEW: Initialize unlock request structure
+      unlockRequest: {
+        method: '',
+        requestedAt: 0,
+        triggered: false,
+        processedAt: 0
+      },
+      unlockAttempts: 0,
+      lastUnlockMethod: '',
+      lastUnlockAt: 0
     };
   }, { applyLocally: false });
 
@@ -237,12 +248,9 @@ export async function unlockViaQRCode(boxId, attemptId) {
     });
   });
 }
+
 /**
- * Verify an unlock code by scanning UnlockCodes/* nodes and returning the matching node.
- * Returns { ok: true, attemptId, itemId, boxId, status } or { ok: false }.
- *
- * NOTE: This reads the entire UnlockCodes node once client-side. For production use a
- * secure server endpoint or Cloud Function that validates the code and returns the attemptId.
+ * Verify unlock code for QR scanning
  */
 export async function verifyUnlockCodeForQR(code, boxId) {
   if (!code || !boxId) return { ok: false, reason: 'Missing code or boxId' };
@@ -266,4 +274,34 @@ export async function verifyUnlockCodeForQR(code, boxId) {
     status: node.status,
     uid: node.uid || node.byUid
   };
+}
+
+/**
+ * Verify an unlock code by scanning UnlockCodes/* nodes and returning the matching node.
+ * Returns { ok: true, attemptId, itemId, boxId, status } or { ok: false }.
+ *
+ * NOTE: This reads the entire UnlockCodes node once client-side. For production use a
+ * secure server endpoint or Cloud Function that validates the code and returns the attemptId.
+ */
+export async function verifyUnlockCode(code) {
+  if (!code) return { ok: false };
+
+  // Read all UnlockCodes children once
+  const snap = await rGet(rRef(rtdb, 'UnlockCodes'));
+  const all = snap.val() || {};
+
+  // Find first match by exact code (case-sensitive) and status pending/successful
+  for (const [boxId, node] of Object.entries(all)) {
+    if (!node) continue;
+    if (node.code === code) {
+      return {
+        ok: true,
+        attemptId: node.attemptId || null,
+        itemId: node.itemID || null,
+        boxId,
+        status: node.status || null,
+      };
+    }
+  }
+  return { ok: false };
 }
