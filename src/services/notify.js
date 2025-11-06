@@ -12,11 +12,12 @@ import {
   updateDoc,
   writeBatch,
   getDocs,
+  deleteDoc,
 } from 'firebase/firestore';
 
 /* Notifications structure: Notifications/{uid}/items/{notifId} */
 
-// Push a notification into a user's inbox (client writes to appropriate path)
+// Push a notification into a user's inbox
 export async function pushNotif(
   uid,
   { type = 'system', title, message, link, meta } = {}
@@ -34,14 +35,14 @@ export async function pushNotif(
   });
 }
 
-// Live unread count (unsubscribe returned)
+// Live unread count
 export function subscribeUnreadCount(uid, cb) {
   const col = collection(db, 'Notifications', uid, 'items');
   const q = query(col, where('read', '==', false));
   return onSnapshot(q, (snap) => cb(snap.size));
 }
 
-// Live notifications list (newest first)
+// Live notifications list
 export function subscribeNotifications(uid, cb) {
   const col = collection(db, 'Notifications', uid, 'items');
   const q = query(col, orderBy('createdAt', 'desc'));
@@ -63,7 +64,21 @@ export async function markAllRead(uid) {
   await batch.commit();
 }
 
-// Optional: server fan-out to admins
+// NEW: Delete a single notification
+export async function deleteNotification(uid, id) {
+  return deleteDoc(doc(db, 'Notifications', uid, 'items', id));
+}
+
+// NEW: Delete all notifications
+export async function deleteAllNotifications(uid) {
+  const col = collection(db, 'Notifications', uid, 'items');
+  const snap = await getDocs(col);
+  const batch = writeBatch(db);
+  snap.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+}
+
+// Server fan-out to admins
 export async function notifyAdmins({ title, message, link = '' }) {
   const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '');
   if (!base) throw new Error('VITE_API_BASE_URL not set');

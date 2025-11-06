@@ -13,7 +13,7 @@ import {
 import { Link } from 'react-router-dom';
 import { useI18n, changeAppLanguage } from '../i18n';
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid
 } from 'recharts';
 import {
   UserCircleIcon,
@@ -32,6 +32,9 @@ import {
   ClockIcon,
   TrophyIcon,
   FireIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  ClipboardDocumentIcon,
 } from '@heroicons/react/24/outline';
 
 // ============= UTILITY COMPONENTS =============
@@ -123,6 +126,109 @@ function InputField({ label, icon, ...props }) {
         {...props}
       />
     </div>
+  );
+}
+
+function AccountDetailsSection({ user }) {
+  const [showUid, setShowUid] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(user.uid);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const maskUid = (uid) => {
+    if (!uid) return '';
+    const visible = 8;
+    return uid.slice(0, visible) + '•'.repeat(Math.max(0, uid.length - visible));
+  };
+
+  return (
+    <Section
+      icon={<UserCircleIcon className="w-5 h-5 text-white" />}
+      title="Account Information"
+      subtitle="Your account credentials"
+    >
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* User ID with Hide/Show */}
+        <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50 relative">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs text-slate-500 dark:text-slate-400">User ID</div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowUid(!showUid)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 transition-colors"
+                title={showUid ? 'Hide User ID' : 'Show User ID'}
+              >
+                {showUid ? (
+                  <>
+                    <EyeSlashIcon className="w-3 h-3" />
+                    Hide
+                  </>
+                ) : (
+                  <>
+                    <EyeIcon className="w-3 h-3" />
+                    Show
+                  </>
+                )}
+              </button>
+              {showUid && (
+                <button
+                  onClick={copyToClipboard}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-400 transition-colors"
+                  title="Copy to clipboard"
+                >
+                  {copied ? (
+                    <>
+                      <CheckCircleIcon className="w-3 h-3" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardDocumentIcon className="w-3 h-3" />
+                      Copy
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="font-mono text-sm text-slate-900 dark:text-white break-all select-all">
+            {showUid ? user.uid : maskUid(user.uid)}
+          </div>
+          {!showUid && (
+            <div className="mt-2 flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+              <ShieldCheckIcon className="w-3 h-3" />
+              <span>Hidden for security</span>
+            </div>
+          )}
+        </div>
+
+        {/* Last Sign In */}
+        <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50">
+          <div className="flex items-center gap-2 mb-2">
+            <ClockIcon className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+            <div className="text-xs text-slate-500 dark:text-slate-400">Last Sign In</div>
+          </div>
+          <div className="text-sm text-slate-900 dark:text-white">
+            {new Date(user.metadata?.lastSignInTime || Date.now()).toLocaleString()}
+          </div>
+          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            {new Date(user.metadata?.lastSignInTime || Date.now()).toLocaleDateString('en-US', {
+              weekday: 'long',
+              month: 'long',
+              day: 'numeric',
+            })}
+          </div>
+        </div>
+      </div>
+    </Section>
   );
 }
 
@@ -418,24 +524,8 @@ export default function AccountPage() {
             </div>
           </Section>
 
-          {/* Account Details */}
-          <Section
-            icon={<UserCircleIcon className="w-5 h-5 text-white" />}
-            title="Account Information"
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">User ID</div>
-                <div className="font-mono text-sm text-slate-900 dark:text-white break-all">{user.uid}</div>
-              </div>
-              <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">Last Sign In</div>
-                <div className="text-sm text-slate-900 dark:text-white">
-                  {new Date(user.metadata?.lastSignInTime || Date.now()).toLocaleString()}
-                </div>
-              </div>
-            </div>
-          </Section>
+          {/* Account Details with Hide/Show */}
+          <AccountDetailsSection user={user} />
         </div>
       )}
 
