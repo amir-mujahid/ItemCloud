@@ -375,3 +375,89 @@ html.dark .qr-scanner-region::after {
 .qr-scan-success {
   animation: successPulse 0.5s ease-in-out;
 }
+
+/* ================================================================
+   MODAL ANIMATIONS & PERFORMANCE OPTIMIZATIONS
+   ================================================================ */
+
+/* Smooth scale-in animation for modals */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.2s ease-out;
+}
+
+/* Performance optimizations for draggable elements */
+.react-draggable {
+  will-change: transform;
+}
+
+.react-draggable-dragging {
+  transition: none !important;
+}
+
+/* Smooth transitions for non-dragging state */
+.glass-gradient,
+.glass-solid {
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+/* Prevent layout shift during drag */
+.react-draggable-dragging * {
+  pointer-events: none;
+}
+
+/* Modal backdrop animation */
+@keyframes backdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-backdrop {
+  animation: backdropFadeIn 0.2s ease-out;
+}
+
+/* Improve rendering performance for modals */
+.modal-content {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Smooth height transitions for collapsible sections */
+.transition-height {
+  transition: height 0.3s ease-in-out;
+}
+
+/* GPU-accelerated animations */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-scaleIn,
+  .animate-slideUp,
+  .animate-fadeIn {
+    will-change: transform, opacity;
+  }
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .animate-scaleIn,
+  .animate-slideUp,
+  .animate-fadeIn,
+  .react-draggable {
+    animation: none !important;
+    transition: none !important;
+  }
+}

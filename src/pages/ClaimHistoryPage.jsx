@@ -1,5 +1,5 @@
 // src/pages/ClaimHistoryPage.jsx
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   collection,
   doc,
@@ -13,6 +13,19 @@ import { auth, db } from '../services/firebase';
 import { useAuth } from '../hooks/useAuth';
 import { useI18n } from '../i18n';
 import ExportButton from '../components/ExportButton';
+import {
+  ClockIcon,
+  MapPinIcon,
+  UserIcon,
+  CheckCircleIcon,
+  ChartBarIcon,
+  MagnifyingGlassIcon,
+  FunnelIcon,
+  CalendarIcon,
+  SparklesIcon,
+  ArrowTrendingUpIcon,
+  XMarkIcon,
+} from '@heroicons/react/24/outline';
 
 // ============= UTILITY FUNCTIONS =============
 
@@ -22,8 +35,7 @@ function formatTimestamp(ts) {
       ts?.toDate?.() ??
       (typeof ts === 'number' ? new Date(ts) : ts instanceof Date ? ts : null);
     if (!d) return '—';
-    
-    // Format: Nov 6, 2025, 5:09 PM
+
     return new Intl.DateTimeFormat('en-GB', {
       month: 'short',
       day: 'numeric',
@@ -43,13 +55,13 @@ function getRelativeTime(ts) {
       ts?.toDate?.() ??
       (typeof ts === 'number' ? new Date(ts) : ts instanceof Date ? ts : null);
     if (!d) return null;
-    
+
     const now = new Date();
     const diffMs = now - d;
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
@@ -76,12 +88,80 @@ function getStatusColor(status) {
   }
 }
 
+function getStatusIcon(status) {
+  switch (status?.toLowerCase()) {
+    case 'successful':
+    case 'completed':
+    case 'claimed':
+      return <CheckCircleIcon className="w-4 h-4" />;
+    case 'pending':
+      return <ClockIcon className="w-4 h-4" />;
+    case 'cancelled':
+    case 'expired':
+      return <XMarkIcon className="w-4 h-4" />;
+    default:
+      return null;
+  }
+}
+
 // ============= COMPONENTS =============
+
+function Toast({ message, type = 'info', onClose }) {
+  const types = {
+    success: 'bg-emerald-50 dark:bg-emerald-900/30 border-emerald-500 text-emerald-800 dark:text-emerald-300',
+    error: 'bg-red-50 dark:bg-red-900/30 border-red-500 text-red-800 dark:text-red-300',
+    info: 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-800 dark:text-blue-300',
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(onClose, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className={`fixed top-4 right-4 z-50 animate-slideUp max-w-md px-4 py-3 rounded-xl border-l-4 shadow-xl ${types[type]}`}>
+      <div className="flex items-center gap-3">
+        <SparklesIcon className="w-5 h-5" />
+        <p className="text-sm font-medium flex-1">{message}</p>
+        <button onClick={onClose} className="text-current opacity-70 hover:opacity-100">
+          <XMarkIcon className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ icon, label, value, trend, color = 'blue' }) {
+  const colorClasses = {
+    blue: 'from-blue-500 to-blue-600',
+    green: 'from-emerald-500 to-emerald-600',
+    purple: 'from-purple-500 to-purple-600',
+    amber: 'from-amber-500 to-amber-600',
+  };
+
+  return (
+    <div className="glass-solid rounded-xl p-5 hover:scale-105 transition-transform duration-300">
+      <div className="flex items-start justify-between mb-3">
+        <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${colorClasses[color]} flex items-center justify-center shadow-lg`}>
+          {icon}
+        </div>
+        {trend && (
+          <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+            <ArrowTrendingUpIcon className="w-4 h-4" />
+            <span className="text-xs font-semibold">+{trend}%</span>
+          </div>
+        )}
+      </div>
+      <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">{label}</p>
+      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
+    </div>
+  );
+}
 
 function TableSkeleton() {
   return (
     <div className="space-y-3 p-6">
-      {[...Array(5)].map((_, i) => (
+      {[...Array(8)].map((_, i) => (
         <div key={i} className="flex gap-4 animate-pulse">
           <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/6"></div>
           <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/12"></div>
@@ -95,66 +175,74 @@ function TableSkeleton() {
   );
 }
 
-function StatsCard({ icon, label, value, color = 'blue' }) {
-  const colorClasses = {
-    blue: 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400',
-    green: 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400',
-    purple: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-    amber: 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400',
-  };
+function ClaimRow({ claim, index }) {
+  const relTime = getRelativeTime(claim.createdAt);
 
   return (
-    <div className="glass-solid rounded-xl p-4 flex items-center gap-4">
-      <div className={`w-12 h-12 rounded-xl ${colorClasses[color]} flex items-center justify-center flex-shrink-0`}>
-        {icon}
-      </div>
-      <div>
-        <p className="text-sm text-slate-500 dark:text-slate-400">{label}</p>
-        <p className="text-2xl font-bold text-slate-900 dark:text-white">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-function SearchBar({ value, onChange, placeholder }) {
-  return (
-    <div className="relative">
-      <svg
-        className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-        />
-      </svg>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-    </div>
-  );
-}
-
-function FilterButton({ active, onClick, children }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
-        active
-          ? 'bg-blue-600 text-white'
-          : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-      }`}
+    <tr
+      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all group"
+      style={{ animationDelay: `${index * 50}ms` }}
     >
-      {children}
-    </button>
+      <td className="py-4 px-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center flex-shrink-0">
+            <CalendarIcon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          </div>
+          <div>
+            <div className="text-sm font-medium text-slate-900 dark:text-white">
+              {formatTimestamp(claim.foundAt)}
+            </div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
+              {claim.itemID}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className="py-4 px-4">
+        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-semibold shadow-lg">
+          <MapPinIcon className="w-4 h-4" />
+          {claim.box}
+        </span>
+      </td>
+      <td className="py-4 px-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-pink-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+            {claim.claimantName.charAt(0).toUpperCase()}
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-slate-900 dark:text-white">
+              {claim.claimantName}
+            </div>
+          </div>
+        </div>
+      </td>
+      <td className="py-4 px-4">
+        <div className="text-sm text-slate-700 dark:text-slate-300 font-mono font-medium">
+          {claim.claimantMatric}
+        </div>
+      </td>
+      <td className="py-4 px-4">
+        <div className="text-sm text-slate-700 dark:text-slate-300 font-mono">
+          {claim.claimantPhone}
+        </div>
+      </td>
+      <td className="py-4 px-4">
+        <div className="text-sm font-medium text-slate-900 dark:text-white">
+          {formatTimestamp(claim.createdAt)}
+        </div>
+        {relTime && (
+          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            {relTime}
+          </div>
+        )}
+      </td>
+      <td className="py-4 px-4">
+        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${getStatusColor(claim.status)}`}>
+          {getStatusIcon(claim.status)}
+          {claim.status || 'Completed'}
+        </span>
+      </td>
+    </tr>
   );
 }
 
@@ -169,6 +257,12 @@ export default function ClaimHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [locationFilter, setLocationFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [toast, setToast] = useState(null);
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type });
+  };
 
   // Fetch user role
   useEffect(() => {
@@ -190,7 +284,7 @@ export default function ClaimHistoryPage() {
     return unsub;
   }, []);
 
-  // Fetch claims data (optimized with batching)
+  // Fetch claims data
   useEffect(() => {
     let off = () => {};
     (async () => {
@@ -266,20 +360,30 @@ export default function ClaimHistoryPage() {
           setRows(full);
           setLoading(false);
         },
-        () => setLoading(false)
+        (error) => {
+          console.error('Error loading claims:', error);
+          showToast('Failed to load claims', 'error');
+          setLoading(false);
+        }
       );
     })();
 
     return () => off();
   }, [role]);
 
-  // Computed statistics
+  // Statistics
   const stats = useMemo(() => {
     const total = rows.length;
     const last24h = rows.filter((r) => {
       if (!r.createdAt) return false;
       const d = r.createdAt.toDate?.() || new Date(r.createdAt);
       return Date.now() - d.getTime() < 86400000;
+    }).length;
+
+    const last7d = rows.filter((r) => {
+      if (!r.createdAt) return false;
+      const d = r.createdAt.toDate?.() || new Date(r.createdAt);
+      return Date.now() - d.getTime() < 604800000;
     }).length;
 
     const locations = [...new Set(rows.map((r) => r.box).filter(Boolean))];
@@ -289,16 +393,25 @@ export default function ClaimHistoryPage() {
     });
     const mostActive = locations.sort((a, b) => byLocation[b] - byLocation[a])[0] || '—';
 
-    return { total, last24h, locations: locations.length, mostActive };
+    const successRate = total > 0 
+      ? Math.round((rows.filter(r => ['successful', 'completed', 'claimed'].includes(r.status?.toLowerCase())).length / total) * 100)
+      : 0;
+
+    return { total, last24h, last7d, locations: locations.length, mostActive, successRate };
   }, [rows]);
 
-  // Filtered and searched rows
+  // Filtered rows
   const filteredRows = useMemo(() => {
     let filtered = rows;
 
     // Location filter
     if (locationFilter !== 'all') {
       filtered = filtered.filter((r) => r.box === locationFilter);
+    }
+
+    // Status filter
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((r) => r.status?.toLowerCase() === statusFilter.toLowerCase());
     }
 
     // Search filter
@@ -310,14 +423,20 @@ export default function ClaimHistoryPage() {
           r.claimantMatric.toLowerCase().includes(q) ||
           r.claimantPhone.includes(q) ||
           r.box.toLowerCase().includes(q) ||
+          r.itemID.toLowerCase().includes(q) ||
           r.id.toLowerCase().includes(q)
       );
     }
 
     return filtered;
-  }, [rows, searchQuery, locationFilter]);
+  }, [rows, searchQuery, locationFilter, statusFilter]);
 
-  // Excel export rows
+  // Unique locations
+  const uniqueLocations = useMemo(() => {
+    return [...new Set(rows.map((r) => r.box).filter(Boolean))].sort();
+  }, [rows]);
+
+  // Export rows
   const exportRows = filteredRows.map((r) => ({
     claimId: r.id,
     attemptId: r.attemptId,
@@ -331,145 +450,192 @@ export default function ClaimHistoryPage() {
     status: r.status,
   }));
 
-  // Get unique locations for filter
-  const uniqueLocations = useMemo(() => {
-    return [...new Set(rows.map((r) => r.box).filter(Boolean))].sort();
-  }, [rows]);
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fadeIn">
+      {/* Toast */}
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
-            {t('claims.title') || 'Claim History'}
-          </h1>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">
-            {role === 'admin' ? 'All claims across the system' : 'Your claimed items'}
-          </p>
+      <div className="glass-gradient rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500 rounded-full filter blur-3xl animate-pulse"></div>
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-purple-500 rounded-full filter blur-3xl animate-pulse delay-500"></div>
         </div>
-        {isAdmin && (
-          <ExportButton
-            rows={exportRows}
-            filename={`claim-history-${new Date().toISOString().slice(0, 10)}.xlsx`}
-          />
-        )}
+
+        <div className="relative z-10 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+              <ChartBarIcon className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
+                {t('claims.title', 'Claim History')}
+              </h1>
+              <p className="text-slate-600 dark:text-slate-300 mt-1">
+                {role === 'admin' ? 'All claims across the system' : 'Your claimed items'}
+              </p>
+            </div>
+          </div>
+
+          {isAdmin && (
+            <ExportButton
+              rows={exportRows}
+              filename={`claim-history-${new Date().toISOString().slice(0, 10)}.xlsx`}
+            />
+          )}
+        </div>
       </div>
 
-      {/* Statistics Cards */}
+      {/* Statistics */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard
-          icon={
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          }
+        <StatCard
+          icon={<CheckCircleIcon className="w-6 h-6 text-white" />}
           label="Total Claims"
           value={stats.total}
           color="blue"
         />
-        <StatsCard
-          icon={
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          }
+        <StatCard
+          icon={<ClockIcon className="w-6 h-6 text-white" />}
           label="Last 24 Hours"
           value={stats.last24h}
+          trend={stats.last7d > 0 ? Math.round((stats.last24h / stats.last7d) * 100) : 0}
           color="green"
         />
-        <StatsCard
-          icon={
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-          }
+        <StatCard
+          icon={<MapPinIcon className="w-6 h-6 text-white" />}
           label="Active Locations"
           value={stats.locations}
           color="purple"
         />
-        <StatsCard
-          icon={
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-              />
-            </svg>
-          }
-          label="Most Active"
-          value={stats.mostActive}
+        <StatCard
+          icon={<ChartBarIcon className="w-6 h-6 text-white" />}
+          label="Success Rate"
+          value={`${stats.successRate}%`}
           color="amber"
         />
       </div>
 
       {/* Search and Filters */}
       <div className="glass-solid rounded-xl p-4">
-        <div className="flex flex-col lg:flex-row gap-4">
-          <div className="flex-1">
-            <SearchBar
+        <div className="flex flex-col gap-4">
+          {/* Search */}
+          <div className="relative">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+            <input
+              type="text"
               value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="Search by name, matric, phone, or location..."
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name, matric, phone, location, or item ID..."
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-2 lg:pb-0">
-            <FilterButton active={locationFilter === 'all'} onClick={() => setLocationFilter('all')}>
-              All Locations
-            </FilterButton>
-            {uniqueLocations.map((loc) => (
-              <FilterButton
-                key={loc}
-                active={locationFilter === loc}
-                onClick={() => setLocationFilter(loc)}
-              >
-                {loc}
-              </FilterButton>
-            ))}
+
+          {/* Filters */}
+          <div className="flex flex-wrap gap-4">
+            {/* Location Filter */}
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                <MapPinIcon className="w-4 h-4 inline mr-1" />
+                Location
+              </label>
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                <button
+                  onClick={() => setLocationFilter('all')}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${
+                    locationFilter === 'all'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  All
+                </button>
+                {uniqueLocations.map((loc) => (
+                  <button
+                    key={loc}
+                    onClick={() => setLocationFilter(loc)}
+                    className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${
+                      locationFilter === loc
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {loc}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                <FunnelIcon className="w-4 h-4 inline mr-1" />
+                Status
+              </label>
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                <button
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${
+                    statusFilter === 'all'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setStatusFilter('successful')}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${
+                    statusFilter === 'successful'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Successful
+                </button>
+                <button
+                  onClick={() => setStatusFilter('pending')}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${
+                    statusFilter === 'pending'
+                      ? 'bg-amber-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Pending
+                </button>
+                <button
+                  onClick={() => setStatusFilter('cancelled')}
+                  className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${
+                    statusFilter === 'cancelled'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Cancelled
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-        {(searchQuery || locationFilter !== 'all') && (
-          <div className="mt-3 flex items-center justify-between text-sm">
-            <p className="text-slate-600 dark:text-slate-400">
-              Showing <span className="font-semibold">{filteredRows.length}</span> of{' '}
-              <span className="font-semibold">{rows.length}</span> claims
-            </p>
-            {(searchQuery || locationFilter !== 'all') && (
+
+          {/* Filter Summary */}
+          {(searchQuery || locationFilter !== 'all' || statusFilter !== 'all') && (
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Showing <span className="font-semibold">{filteredRows.length}</span> of{' '}
+                <span className="font-semibold">{rows.length}</span> claims
+              </p>
               <button
                 onClick={() => {
                   setSearchQuery('');
                   setLocationFilter('all');
+                  setStatusFilter('all');
                 }}
-                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
               >
-                Clear filters
+                Clear all filters
               </button>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -478,26 +644,14 @@ export default function ClaimHistoryPage() {
           <TableSkeleton />
         ) : filteredRows.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 px-4">
-            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
-              <svg
-                className="w-8 h-8 text-slate-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"
-                />
-              </svg>
+            <div className="w-20 h-20 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+              <ChartBarIcon className="w-10 h-10 text-slate-400" />
             </div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-1">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
               No claims found
             </h3>
             <p className="text-slate-500 dark:text-slate-400 text-center max-w-md">
-              {searchQuery || locationFilter !== 'all'
+              {searchQuery || locationFilter !== 'all' || statusFilter !== 'all'
                 ? 'Try adjusting your filters or search query'
                 : 'No items have been claimed yet'}
             </p>
@@ -505,7 +659,6 @@ export default function ClaimHistoryPage() {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1200px]">
-              {/* Header */}
               <thead className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
                 <tr>
                   <th className="py-4 px-4 text-left font-semibold text-sm">Item Found</th>
@@ -517,87 +670,26 @@ export default function ClaimHistoryPage() {
                   <th className="py-4 px-4 text-left font-semibold text-sm">Status</th>
                 </tr>
               </thead>
-
-              {/* Body */}
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {filteredRows.map((r, idx) => {
-                  const relTime = getRelativeTime(r.createdAt);
-                  return (
-                    <tr
-                      key={r.id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                    >
-                      <td className="py-4 px-4">
-                        <div className="text-sm text-slate-900 dark:text-white">
-                          {formatTimestamp(r.foundAt)}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          ID: {r.itemID}
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-sm font-medium">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                            />
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                            />
-                          </svg>
-                          {r.box}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="text-sm font-medium text-slate-900 dark:text-white">
-                          {r.claimantName}
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="text-sm text-slate-600 dark:text-slate-300 font-mono">
-                          {r.claimantMatric}
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="text-sm text-slate-600 dark:text-slate-300 font-mono">
-                          {r.claimantPhone}
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="text-sm text-slate-900 dark:text-white">
-                          {formatTimestamp(r.createdAt)}
-                        </div>
-                        {relTime && (
-                          <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            {relTime}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-4 px-4">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(r.status)}`}>
-                          {r.status || 'Completed'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {filteredRows.map((claim, index) => (
+                  <ClaimRow key={claim.id} claim={claim} index={index} />
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* Footer Info */}
+      {/* Footer */}
       {!loading && filteredRows.length > 0 && (
-        <div className="text-center text-sm text-slate-500 dark:text-slate-400">
-          Showing {filteredRows.length} {filteredRows.length === 1 ? 'claim' : 'claims'}
-          {role === 'admin' && ' • Admin view'}
+        <div className="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
+          <p>
+            Showing {filteredRows.length} {filteredRows.length === 1 ? 'claim' : 'claims'}
+            {role === 'admin' && ' • Admin view'}
+          </p>
+          <p className="text-xs">
+            Last updated: {new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
+          </p>
         </div>
       )}
     </div>
